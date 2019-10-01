@@ -1726,92 +1726,99 @@ export default class AuthClass {
 			.map(entry => entry.split('='))
 			.find(([k]) => k === 'access_token' || k === 'error');
 
-		if (hasCodeOrError || hasTokenOrError) {
-			try {
-				const {
-					accessToken,
-					idToken,
-					refreshToken,
-					state,
-				} = await this._oAuthHandler.handleAuthResponse(currentUrl);
-				const session = new CognitoUserSession({
-					IdToken: new CognitoIdToken({ IdToken: idToken }),
-					RefreshToken: new CognitoRefreshToken({ RefreshToken: refreshToken }),
-					AccessToken: new CognitoAccessToken({ AccessToken: accessToken }),
-				});
+		if (
+			this._config.authPattern &&
+			currentUrl.includes(this._config.authPattern)
+		) {
+			if (hasCodeOrError || hasTokenOrError) {
+				try {
+					const {
+						accessToken,
+						idToken,
+						refreshToken,
+						state,
+					} = await this._oAuthHandler.handleAuthResponse(currentUrl);
+					const session = new CognitoUserSession({
+						IdToken: new CognitoIdToken({ IdToken: idToken }),
+						RefreshToken: new CognitoRefreshToken({
+							RefreshToken: refreshToken,
+						}),
+						AccessToken: new CognitoAccessToken({ AccessToken: accessToken }),
+					});
 
-				let credentials;
-				// Get AWS Credentials & store if Identity Pool is defined
-				if (this._config.identityPoolId) {
-					credentials = await Credentials.set(session, 'session');
-					logger.debug('AWS credentials', credentials);
-				}
+					let credentials;
+					// Get AWS Credentials & store if Identity Pool is defined
+					if (this._config.identityPoolId) {
+						credentials = await Credentials.set(session, 'session');
+						logger.debug('AWS credentials', credentials);
+					}
 
-				/* 
+					/* 
                 Prior to the request we do sign the custom state along with the state we set. This check will verify
                 if there is a dash indicated when setting custom state from the request. If a dash is contained
                 then there is custom state present on the state string.
                 */
-				const isCustomStateIncluded = /-/.test(state);
+					const isCustomStateIncluded = /-/.test(state);
 
-				/*The following is to create a user for the Cognito Identity SDK to store the tokens
+					/*The following is to create a user for the Cognito Identity SDK to store the tokens
                   When we remove this SDK later that logic will have to be centralized in our new version*/
-				//#region
-				const currentUser = this.createCognitoUser(
-					session.getIdToken().decodePayload()['cognito:username']
-				);
-				dispatchAuthEvent(
-					'signIn',
-					currentUser,
-					`A user ${currentUser.getUsername()} has been signed in`
-				);
-				dispatchAuthEvent(
-					'cognitoHostedUI',
-					currentUser,
-					`A user ${currentUser.getUsername()} has been signed in via Cognito Hosted UI`
-				);
-
-				if (isCustomStateIncluded) {
-					const [, customState] = state.split('-');
-
+					//#region
+					const currentUser = this.createCognitoUser(
+						session.getIdToken().decodePayload()['cognito:username']
+					);
 					dispatchAuthEvent(
-						'customOAuthState',
-						customState,
-						`State for user ${currentUser.getUsername()}`
+						'signIn',
+						currentUser,
+						`A user ${currentUser.getUsername()} has been signed in`
 					);
-				}
-
-				// This calls cacheTokens() in Cognito SDK
-				currentUser.setSignInUserSession(session);
-				//#endregion
-
-				if (window && typeof window.history !== 'undefined') {
-					window.history.replaceState(
-						{},
-						null,
-						(this._config.oauth as AwsCognitoOAuthOpts).redirectSignIn
+					dispatchAuthEvent(
+						'cognitoHostedUI',
+						currentUser,
+						`A user ${currentUser.getUsername()} has been signed in via Cognito Hosted UI`
 					);
-				}
 
-				return credentials;
-			} catch (err) {
-				logger.debug('Error in cognito hosted auth response', err);
-				dispatchAuthEvent(
-					'signIn_failure',
-					err,
-					`The OAuth response flow failed`
-				);
-				dispatchAuthEvent(
-					'cognitoHostedUI_failure',
-					err,
-					`A failure occurred when returning to the Cognito Hosted UI`
-				);
-				dispatchAuthEvent(
-					'customState_failure',
-					err,
-					`A failure occurred when returning state`
-				);
-				throw err;
+					if (isCustomStateIncluded) {
+						const [, customState] = state.split('-');
+
+						dispatchAuthEvent(
+							'customOAuthState',
+							customState,
+							`State for user ${currentUser.getUsername()}`
+						);
+					}
+
+					// This calls cacheTokens() in Cognito SDK
+					currentUser.setSignInUserSession(session);
+					//#endregion
+
+					if (window && typeof window.history !== 'undefined') {
+						window.history.replaceState(
+							{},
+							null,
+							(this._config.oauth as AwsCognitoOAuthOpts).redirectSignIn
+						);
+					}
+
+					return credentials;
+				} catch (err) {
+					logger.debug('Error in cognito hosted auth response', err);
+					dispatchAuthEvent(
+						'signIn_failure',
+						err,
+						`The OAuth response flow failed`
+					);
+					dispatchAuthEvent(
+						'cognitoHostedUI_failure',
+						err,
+						`A failure occurred when returning to the Cognito Hosted UI`
+					);
+					dispatchAuthEvent(
+						'customState_failure',
+						err,
+						`A failure occurred when returning state`
+					);
+					throw err;
+				}
 			}
 		}
 	}

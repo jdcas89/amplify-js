@@ -48,6 +48,7 @@ export interface AuthOptions {
 	storage?: ICognitoStorage;
 	authenticationFlowType?: string;
 	identityPoolRegion?: string;
+	authPattern?: string;
 }
 
 export enum CognitoHostedUIIdentityProvider {
